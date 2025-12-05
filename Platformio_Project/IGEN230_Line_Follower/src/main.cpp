@@ -1,7 +1,7 @@
 #include <Arduino.h>
 
-const int motorAPWM = 34;
-const int motorA1 = 35;
+const int motorAPWM = 21;
+const int motorA1 = 19;
 const int motorA2 = 32;
 const int motorB1 = 33;
 const int motorB2 = 25;
@@ -38,22 +38,41 @@ void setup() {
   Serial.begin(115200);
   delay(10);
 
+  pinMode(motorAPWM, OUTPUT);
   pinMode(motorA1, OUTPUT);
   pinMode(motorA2, OUTPUT);
   pinMode(motorB1, OUTPUT);
   pinMode(motorB2, OUTPUT);
-
-  pinMode(motorAPWM, OUTPUT);
   pinMode(motorBPWM, OUTPUT);
 
-  pinMode(sensorPins[0], INPUT);
-  pinMode(sensorPins[1], INPUT);
-  pinMode(sensorPins[2], INPUT);
-  pinMode(sensorPins[3], INPUT);
-  pinMode(sensorPins[4], INPUT);
+  // pinMode(sensorPins[0], INPUT);
+  // pinMode(sensorPins[1], INPUT);
+  // pinMode(sensorPins[2], INPUT);
+  // pinMode(sensorPins[3], INPUT);
+  // pinMode(sensorPins[4], INPUT);
+  //characterize_sensors();
 }
 
 void loop() {
+  // read sensors and print all of them in a line eg. "1200 1300 1400 1500 1600"
+  
+  readSensors();
+  Serial.print("Sensors: ");
+  for (int i = 0; i < 5; i++) {
+    Serial.print(sensor_read_values[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+
+  sleep(500);
+
+  return;
+
+  motor_speed_balance = 0.5; // balanced
+  setMotorSpeed();
+  forward();
+  return;
+
   readSensors();
 
   // If 0 active, turn left, if 4 active, turn right, else forward
