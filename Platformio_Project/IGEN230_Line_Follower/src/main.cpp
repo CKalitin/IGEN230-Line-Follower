@@ -1,89 +1,135 @@
 #include <Arduino.h>
 
-const int motorA1 = 12;
-const int motorA2 = 13;
-const int motorB1 = 14;
-const int motorB2 = 27;
+const int motorAPWM = 34;
+const int motorA1 = 35;
+const int motorA2 = 32;
+const int motorB1 = 33;
+const int motorB2 = 25;
+const int motorBPWM = 26;
 
-const int motorAPWM = 26;
-const int motorBPWM = 25;
+// sensor:
+// trig: D23
+// echo: D27
 
-int pwm = 200;
+int pwm = 255; // up to 255
+float motor_speed_balance = 0.5; // balance between motors A and B (0.0 to 1.0)
 
-// order: 13 12 14 27 26 25
+const int sensorPins[] = {15, 4, 13, 12, 14};
 
-const int sensor1 = 15;
-const int sensor2 = 4;
-const int sensor3 = 35;
-const int sensor4 = 34;
-const int sensor5 = 39;
+const int sensor_thresholds[] = {1000, 1000, 1000, 1000, 1000};
 
-const int sensorThreshold = 1000;
+int sensor_read_values[5] = {0, 0, 0, 0, 0};
+
+int sensors_activated[5] = {0, 0, 0, 0, 0}; // 0 = black (on line), 1 = white (off line)
+
+const int sensor_read_delay_ms = 1;
+const int sensor_averaged_values_count = 1;
 
 void forward();
 void backward();
 void stopMotors();
-int readSensors();
+void readSensors();
+int readSensor(int sensorPin);
+void setMotorSpeed();
+
+void characterize_sensors();
 
 void setup() {
   Serial.begin(115200);
   delay(10);
 
-  // pinMode(motorA1, OUTPUT); //Declaring the pin modes
-  // pinMode(motorA2, OUTPUT);
-  // pinMode(motorB1, OUTPUT);
-  // pinMode(motorB2, OUTPUT);
+  pinMode(motorA1, OUTPUT);
+  pinMode(motorA2, OUTPUT);
+  pinMode(motorB1, OUTPUT);
+  pinMode(motorB2, OUTPUT);
 
-  // pinMode(motorAPWM, OUTPUT);
-  // pinMode(motorBPWM, OUTPUT);
+  pinMode(motorAPWM, OUTPUT);
+  pinMode(motorBPWM, OUTPUT);
 
-  pinMode(sensor1, INPUT);
-  pinMode(sensor2, INPUT);
-  pinMode(sensor3, INPUT);
-  pinMode(sensor4, INPUT);
-  pinMode(sensor5, INPUT);
+  pinMode(sensorPins[0], INPUT);
+  pinMode(sensorPins[1], INPUT);
+  pinMode(sensorPins[2], INPUT);
+  pinMode(sensorPins[3], INPUT);
+  pinMode(sensorPins[4], INPUT);
 }
 
 void loop() {
-  int sensorValue = analogRead(sensor1);
-  Serial.print("Sensor Value 1: ");
-  Serial.println(sensorValue);
-  sensorValue = analogRead(sensor2);
-  Serial.print("Sensor Value 2: ");
-  Serial.println(sensorValue);
-  sensorValue = analogRead(sensor3);
-  Serial.print("Sensor Value 3: ");
-  Serial.println(sensorValue);
-  delay(500);
+  readSensors();
 
-  return;
+  // If 0 active, turn left, if 4 active, turn right, else forward
 
-  // while (true) {
-  //   pwm += 25;
-  //   if (pwm > 255) pwm = 0;
+  if (sensors_activated[0] == 0) {
+    // leftmost sensor on line, turn left
+    motor_speed_balance = 0.0; // favor motor B
+    setMotorSpeed();
+    forward();
+  } else if (sensors_activated[4] == 0) {
+    // rightmost sensor on line, turn right
+    motor_speed_balance = 1.0; // favor motor A
+    setMotorSpeed();
+    forward();
+  } else {
+    motor_speed_balance = 0.5; // balanced
+    setMotorSpeed();
+    forward();
+  }
+}
 
-  //   analogWrite(motorAPWM, pwm);
-  //   analogWrite(motorBPWM, pwm);
+void characterize_sensors() {
+  Serial.println("Characterizing sensors...");
+  Serial.println("Place all sensors on WHITE surface.");
+  
+  // wait 5 seconds
+  for (int i = 5; i > 0; i--) {
+    Serial.print(i);
+    Serial.println("...");
+    delay(1000);
+  }
 
-  //   forward();
-  //   delay(1000);
-  // }
+  readSensors();
+  int white_surface_readings[] = {sensor_read_values[0], sensor_read_values[1], sensor_read_values[2], sensor_read_values[3], sensor_read_values[4]};
 
-  // Serial.println("Moving Forward");
-  // forward();
-  // delay(1000);
+  Serial.println("White surface readings:");
+  for (int i = 0; i < 5; i++) {
+    Serial.print("Sensor ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.println(white_surface_readings[i]);
+  }
 
-  // Serial.println("Stopping");
-  // stopMotors();
-  // delay(500);
+  Serial.println("Place all sensors on BLACK surface.");
+  // wait 5 seconds
+  for (int i = 5; i > 0; i--) {
+    Serial.print(i);
+    Serial.println("...");
+    delay(1000);
+  }
 
-  // Serial.println("Moving Backward");
-  // backward();
-  // delay(1000);
+  readSensors();
 
-  // Serial.println("Stopping");
-  // stopMotors();
-  // delay(500);
+  int black_surface_readings[] = {sensor_read_values[0], sensor_read_values[1], sensor_read_values[2], sensor_read_values[3], sensor_read_values[4]};
+
+  Serial.println("Black surface readings:");
+  for (int i = 0; i < 5; i++) {
+    Serial.print("Sensor ");
+    Serial.print(i + 1);
+    Serial.print(": ");
+    Serial.println(black_surface_readings[i]);
+  }
+
+  // Calculate and print thresholds
+  Serial.println("Calculated thresholds:");
+  for (int i = 0; i < 5; i++) {
+    int threshold = (white_surface_readings[i] + black_surface_readings[i]) / 2;
+    Serial.print("Sensor ");
+    Serial.print(i + 1);
+    Serial.print(" Threshold: ");
+    Serial.println(threshold);
+  }
+
+  Serial.println("Characterization complete. Exit Please.");
+  
+  delay(100000);
 }
 
 void forward() {
@@ -107,7 +153,31 @@ void stopMotors() {
   digitalWrite(motorB2, LOW);
 }
 
-// int readSensors(){
-//   int sensorValue = analogRead(sensor1);
-//   // threshold code is easy
-// }
+void readSensors(){
+  for (int i = 0; i < 5; i++) {
+    sensor_read_values[i] = readSensor(i);
+
+    sensors_activated[i] = 1; // white, default value if above or equal to threshold
+    if (sensor_read_values[i] < sensor_thresholds[i]) {
+      sensors_activated[i] = 0; // black, if below threshold
+    }
+  }
+}
+
+int readSensor(int sensorIndex) {
+  long total = 0;
+  int sensorPin = sensorPins[sensorIndex];
+  for (int i = 0; i < sensor_averaged_values_count; i++) {
+    total += analogRead(sensorPin);
+    delay(sensor_read_delay_ms); // small delay between readings
+  }
+  return total / sensor_averaged_values_count;
+}
+
+void setMotorSpeed() {
+  int motorAPWMValue = pwm * motor_speed_balance;
+  int motorBPWMValue = pwm * (1.0 - motor_speed_balance);
+
+  analogWrite(motorAPWM, motorAPWMValue);
+  analogWrite(motorBPWM, motorBPWMValue);
+}
