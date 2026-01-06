@@ -1,8 +1,8 @@
 #include <Arduino.h>
 
-const int motorAPWM = 19; // Right
+const int motorAPWM = 21; // Right
 const int motorA1 = 32;
-const int motorA2 = 21;
+const int motorA2 = 19;
 const int motorB1 = 33; // Left
 const int motorB2 = 25;
 const int motorBPWM = 26;
@@ -11,9 +11,15 @@ const int motorBPWM = 26;
 // trig: D23
 // echo: D27
 
-int pwm = 255; // up to 255
+int pwm = 150; // up to 255
 
-const int sensorPins[] = {15, 4, 13, 12, 14};
+// Custom tuned to go in a straight line
+float motor_A_multiplier = 0.90; // Left
+float motor_B_multiplier = 1.0; // Right
+
+const int sensorPins[] = {15, 4, 13, 14, 27};
+
+// If pin 12 is occupied, flashing fails
 
 const int sensor_thresholds[] = {1000, 1000, 1000, 1000, 1000};
 
@@ -27,12 +33,23 @@ const int sensor_averaged_values_count = 1;
 void forward();
 void backward();
 void turn(int direction); // -1 = left, 1 = right
+
 void stopMotors();
-void readSensors();
-int readSensor(int sensorPin);
+void lerpPWM(int ms, int start_pwm, int target_pwm);
+
 void setMotorSpeed();
 
+void readSensors();
+int readSensor(int sensorPin);
+
+void printSensorsActivated();
+void printSensorValues();
+
 void characterize_sensors();
+
+void algorithm1();
+void algorithm2();
+void algorithm3();
 
 void setup() {
   Serial.begin(115200);
@@ -57,53 +74,54 @@ void setup() {
 }
 
 void loop() {
-  // forward 1 s, left 1 s, backward 1 s, right 1 s, stop 1 s
-
-  // int delay_ms = 2000;
   // forward();
-  // delay(delay_ms);
-  // turn(-1);
-  // delay(delay_ms);
-  // backward();
-  // delay(delay_ms);
-  // turn(1);
-  // delay(delay_ms);
-  // stopMotors();
-  // delay(delay_ms);
-
-  // read sensors and print all of them in a line eg. "1200 1300 1400 1500 1600"
-  
-  readSensors();
-  Serial.print("Sensors: ");
-  for (int i = 0; i < 5; i++) {
-    Serial.print(sensor_read_values[i]);
-    Serial.print(" ");
-  }
-  Serial.println();
-
-  delay(500);
-
-  //motor_speed_balance = 0.5; // balanced
-  // setMotorSpeed();
-  // forward();
-  // sleep(1000);
+  // pwm = 100;
   // return;
 
-  // readSensors();
+  algorithm2();
+}
+
+void algorithm2() {
+  lerpPWM(50, pwm, 0); // accelerate to 200 pwm in 200 ms
+
+  readSensors();
+  printSensorsActivated();
+
+  if (sensors_activated[0] == 1) {
+    // leftmost sensor on line, turn left
+    turn(-1);
+    //forward();
+  } else if (sensors_activated[4] == 1) {
+    // rightmost sensor on line, turn right
+    turn(1);
+    //forward();
+  } else {
+    forward();
+  }
+
+  delay(50);
+
+  lerpPWM(50, pwm, 200); // accelerate to 200 pwm in 200 ms
+}
+
+void algorithm1() {
+  readSensors();
+
+  printSensorsActivated();
 
   // If 0 active, turn left, if 4 active, turn right, else forward
 
-  // if (sensors_activated[0] == 0) {
-  //   // leftmost sensor on line, turn left
-  //   turn(-1);
-  //   forward();
-  // } else if (sensors_activated[4] == 0) {
-  //   // rightmost sensor on line, turn right
-  //   turn(1);
-  //   forward();
-  // } else {
-  //   forward();
-  // }
+  if (sensors_activated[0] == 1) {
+    // leftmost sensor on line, turn left
+    turn(-1);
+    //forward();
+  } else if (sensors_activated[4] == 1) {
+    // rightmost sensor on line, turn right
+    turn(1);
+    //forward();
+  } else {
+    forward();
+  }
 }
 
 void characterize_sensors() {
@@ -211,6 +229,26 @@ void readSensors(){
   }
 }
 
+void printSensorsActivated() {
+  // print all sensors_activated
+  Serial.print("Sensors Activated: ");
+  for (int i = 0; i < 5; i++) {
+    Serial.print(sensors_activated[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+}
+
+void printSensorValues() {
+  // print all sensor values
+  Serial.print("Sensor Values: ");
+  for (int i = 0; i < 5; i++) {
+    Serial.print(sensor_read_values[i]);
+    Serial.print(" ");
+  }
+  Serial.println();
+}
+
 int readSensor(int sensorIndex) {
   long total = 0;
   int sensorPin = sensorPins[sensorIndex];
@@ -222,9 +260,21 @@ int readSensor(int sensorIndex) {
 }
 
 void setMotorSpeed() {
-  int motorAPWMValue = pwm; // ;pwm * motor_speed_balance;
-  int motorBPWMValue = pwm; // pwm * (1.0 - motor_speed_balance);
+  int motorAPWMValue = pwm * motor_A_multiplier; // ;pwm * motor_speed_balance;
+  int motorBPWMValue = pwm * motor_B_multiplier; // pwm * (1.0 - motor_speed_balance);
 
   analogWrite(motorAPWM, motorAPWMValue);
   analogWrite(motorBPWM, motorBPWMValue);
+}
+
+void lerpPWM(int ms, int start_pwm, int target_pwm) {
+  int steps = 10;
+  int delay_per_step = ms / steps;
+  for (int i = 0; i <= steps; i++) {
+    float t = (float)i / (float)steps;
+    int current_pwm = start_pwm + (target_pwm - start_pwm) * t;
+    pwm = current_pwm;
+    setMotorSpeed();
+    delay(delay_per_step);
+  }
 }
