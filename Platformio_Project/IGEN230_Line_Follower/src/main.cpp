@@ -1,9 +1,9 @@
 #include <Arduino.h>
 
-const int motorAPWM = 21; // Right
+const int motorAPWM = 21; // right
 const int motorA1 = 32;
 const int motorA2 = 19;
-const int motorB1 = 33; // Left
+const int motorB1 = 33; // left
 const int motorB2 = 25;
 const int motorBPWM = 26;
 
@@ -14,8 +14,11 @@ const int motorBPWM = 26;
 int pwm = 150; // up to 255
 
 // Custom tuned to go in a straight line
-float motor_A_multiplier = 0.90; // Left
-float motor_B_multiplier = 1.0; // Right
+float motor_A_multiplier = 1.0; // left
+float motor_B_multiplier = 0.7; // right
+
+bool printDirections = true; // Toggle for printing direction messages
+bool printSensors = false; // Toggle for printing sensor messages
 
 const int sensorPins[] = {15, 4, 13, 14, 27};
 
@@ -32,7 +35,8 @@ const int sensor_averaged_values_count = 1;
 
 void forward();
 void backward();
-void turn(int direction); // -1 = left, 1 = right
+void turn(int direction); // -1 = right, 1 = left
+void hard_turn(int direction); // -1 = right, 1 = left
 
 void stopMotors();
 void lerpPWM(int ms, int start_pwm, int target_pwm);
@@ -48,8 +52,11 @@ void printSensorValues();
 void characterize_sensors();
 
 void algorithm1();
-void algorithm2();
+void algorithm2(); // track 1
 void algorithm3();
+
+int check_sensors_on_or(int s_0, int s_1, int s_2, int s_3, int s_4);
+int check_sensors_on_and(int s_0, int s_1, int s_2, int s_3, int s_4);
 
 void setup() {
   Serial.begin(115200);
@@ -61,6 +68,7 @@ void setup() {
   pinMode(motorB1, OUTPUT);
   pinMode(motorB2, OUTPUT);
   pinMode(motorBPWM, OUTPUT);
+  pinMode(2, OUTPUT); // onboard LED
 
   // Initialize motor speeds
   setMotorSpeed();
@@ -78,30 +86,105 @@ void loop() {
   // pwm = 100;
   // return;
 
-  algorithm2();
+  //algorithm2();
+
+  algorithm3();
 }
 
-void algorithm2() {
-  lerpPWM(50, pwm, 0); // accelerate to 200 pwm in 200 ms
+void algorithm3() {
+  int wait_period = 150;
+  int motor_period = 100;
+  int max_pwm = 255;
+
+  pwm = max_pwm;
+
+  stopMotors();
+
+  digitalWrite(2, LOW);
+
+  delay(wait_period);
 
   readSensors();
   printSensorsActivated();
 
-  if (sensors_activated[0] == 1) {
-    // leftmost sensor on line, turn left
+  // If 0 or 1 ) and (4 or 3 active, forward)
+  if (check_sensors_on_or(1, 1, 0, 0, 0) && check_sensors_on_or(0, 0, 0, 1, 1)) {
+    forward();
+  }
+
+  else if (check_sensors_on_and(1, 0, 0, 0, 0)){
+    hard_turn(-1);
+  }
+
+  else if (check_sensors_on_and(0, 0, 0, 0, 1)){
+    hard_turn(1);
+  }
+
+  else if (check_sensors_on_and(0, 1, 0, 0, 0)){
+    turn(-1);
+  }
+
+  else if (check_sensors_on_and(0, 0, 0, 1, 0)){
+    turn(1);
+  }
+
+  else if (check_sensors_on_and(0, 0, 1, 0, 0)){
+    forward();
+  }
+
+  else {
+    hard_turn(1);
+  }
+  
+  delay(wait_period);
+
+  digitalWrite(2, HIGH);
+
+  delay(motor_period);
+
+}
+
+void algorithm2() {
+  int pwm_period = 10;
+  int wait_period = 25;
+  int motor_period = 50;
+  
+  // for use with wire, go 230
+  // for wireless use (no connection to laptop), 180
+  int max_pwm = 240;
+
+  lerpPWM(pwm_period, pwm, 0); // accelerate to 200 pwm in 200 ms
+
+  stopMotors();
+
+  digitalWrite(2, LOW);
+
+  delay(wait_period);
+
+  readSensors();
+  printSensorsActivated();
+
+  if (sensors_activated[0] == 1 || sensors_activated[1] == 1) {
+    // rightmost sensor on line, turn right
     turn(-1);
     //forward();
-  } else if (sensors_activated[4] == 1) {
-    // rightmost sensor on line, turn right
+  } else if (sensors_activated[4] == 1 || sensors_activated[3] == 1) {
+    // leftmost sensor on line, turn left
     turn(1);
     //forward();
   } else {
     forward();
   }
+  
+  delay(wait_period);
 
-  delay(50);
+  digitalWrite(2, HIGH);
 
-  lerpPWM(50, pwm, 200); // accelerate to 200 pwm in 200 ms
+  // turn on ESP32 onboard LED to indicate loop iteration
+
+  lerpPWM(pwm_period, pwm, max_pwm); // accelerate to 200 pwm in 200 ms
+
+  delay(motor_period);
 }
 
 void algorithm1() {
@@ -109,14 +192,14 @@ void algorithm1() {
 
   printSensorsActivated();
 
-  // If 0 active, turn left, if 4 active, turn right, else forward
+  // If 0 active, turn right, if 4 active, turn left, else forward
 
   if (sensors_activated[0] == 1) {
-    // leftmost sensor on line, turn left
+    // rightmost sensor on line, turn right
     turn(-1);
     //forward();
   } else if (sensors_activated[4] == 1) {
-    // rightmost sensor on line, turn right
+    // leftmost sensor on line, turn left
     turn(1);
     //forward();
   } else {
@@ -182,6 +265,10 @@ void characterize_sensors() {
 }
 
 void forward() {
+  if (printDirections) {
+    Serial.println("Moving FORWARD");
+  }
+
   digitalWrite(motorA1, HIGH);
   digitalWrite(motorA2, LOW);
   digitalWrite(motorB1, HIGH);
@@ -189,6 +276,9 @@ void forward() {
 }
 
 void backward() {
+  if (printDirections) {
+    Serial.println("Moving BACKWARD");
+  }
   digitalWrite(motorA1, LOW);
   digitalWrite(motorA2, HIGH);
   digitalWrite(motorB1, LOW);
@@ -197,13 +287,45 @@ void backward() {
 
 void turn(int direction) {
   if (direction < 0) {
+    // turn right
+    if (printDirections) {
+      Serial.println("Turning LEFT");
+    }
+
+    digitalWrite(motorA1, HIGH);
+    digitalWrite(motorA2, LOW);
+    //digitalWrite(motorB1, LOW); // DISABLE ME
+    //digitalWrite(motorB2, HIGH); // DISABLE ME
+  } else {
     // turn left
+    if (printDirections) {
+      Serial.println("Turning RIGHT");
+    }
+
+    //digitalWrite(motorA1, LOW); // DISABLE ME
+    //digitalWrite(motorA2, HIGH); // DISABLE ME
+    digitalWrite(motorB1, HIGH);
+    digitalWrite(motorB2, LOW);
+  }
+}
+
+void hard_turn(int direction) {
+  if (direction < 0) {
+    // turn right
+    if (printDirections) {
+      Serial.println("Hard Turning LEFT");
+    }
+
     digitalWrite(motorA1, HIGH);
     digitalWrite(motorA2, LOW);
     digitalWrite(motorB1, LOW);
     digitalWrite(motorB2, HIGH);
   } else {
-    // turn right
+    // turn left
+    if (printDirections) {
+      Serial.println("Hard Turning RIGHT");
+    }
+
     digitalWrite(motorA1, LOW);
     digitalWrite(motorA2, HIGH);
     digitalWrite(motorB1, HIGH);
@@ -212,6 +334,10 @@ void turn(int direction) {
 }
 
 void stopMotors() {
+  if (printDirections) {
+    Serial.println("Stopping Motors");
+  }
+
   digitalWrite(motorA1, LOW);
   digitalWrite(motorA2, LOW);
   digitalWrite(motorB1, LOW);
@@ -230,23 +356,27 @@ void readSensors(){
 }
 
 void printSensorsActivated() {
-  // print all sensors_activated
-  Serial.print("Sensors Activated: ");
-  for (int i = 0; i < 5; i++) {
-    Serial.print(sensors_activated[i]);
-    Serial.print(" ");
+  if (printSensors) {
+    // print all sensors_activated
+    Serial.print("Sensors Activated: ");
+    for (int i = 0; i < 5; i++) {
+      Serial.print(sensors_activated[i]);
+      Serial.print(" ");
+    }
+    Serial.println();
   }
-  Serial.println();
 }
 
 void printSensorValues() {
-  // print all sensor values
-  Serial.print("Sensor Values: ");
-  for (int i = 0; i < 5; i++) {
-    Serial.print(sensor_read_values[i]);
-    Serial.print(" ");
+  if (printSensors) {
+    // print all sensor values
+    Serial.print("Sensor Values: ");
+    for (int i = 0; i < 5; i++) {
+      Serial.print(sensor_read_values[i]);
+      Serial.print(" ");
+    }
+    Serial.println();
   }
-  Serial.println();
 }
 
 int readSensor(int sensorIndex) {
@@ -268,6 +398,10 @@ void setMotorSpeed() {
 }
 
 void lerpPWM(int ms, int start_pwm, int target_pwm) {
+  if (printDirections) {
+    //Serial.println("Lerping PWM: " + String(start_pwm) + " -> " + String(target_pwm) + " over " + String(ms) + "ms");
+  }
+
   int steps = 10;
   int delay_per_step = ms / steps;
   for (int i = 0; i <= steps; i++) {
@@ -277,4 +411,26 @@ void lerpPWM(int ms, int start_pwm, int target_pwm) {
     setMotorSpeed();
     delay(delay_per_step);
   }
+}
+
+int check_sensors_on_or(int s0, int s1, int s2, int s3, int s4) {
+  int out = 0;
+
+  if (s0 == 1 && sensors_activated[0] == 1) out = 1;
+  if (s1 == 1 && sensors_activated[1] == 1) out = 1;
+  if (s2 == 1 && sensors_activated[2] == 1) out = 1;
+  if (s3 == 1 && sensors_activated[3] == 1) out = 1;
+  if (s4 == 1 && sensors_activated[4] == 1) out = 1;
+  return out;
+}
+
+int check_sensors_on_and(int s0, int s1, int s2, int s3, int s4) {
+  int out = 1;
+
+  if (s0 == 1 && sensors_activated[0] == 0) out = 0;
+  if (s1 == 1 && sensors_activated[1] == 0) out = 0;
+  if (s2 == 1 && sensors_activated[2] == 0) out = 0;
+  if (s3 == 1 && sensors_activated[3] == 0) out = 0;
+  if (s4 == 1 && sensors_activated[4] == 0) out = 0;
+  return out;
 }
