@@ -1,4 +1,3 @@
-#include <Arduino.h>
 
 const int motorAPWM = 21; // right
 const int motorA1 = 32;
@@ -92,8 +91,8 @@ void loop() {
 }
 
 void algorithm3() {
-  int wait_period = 150;
-  int motor_period = 100;
+  int wait_period = 50; // 50 before
+  int motor_period = 100; // 220 for course 1 with obstacle, 120 otherwise
   int max_pwm = 255;
 
   pwm = max_pwm;
@@ -133,7 +132,29 @@ void algorithm3() {
   }
 
   else {
-    hard_turn(1);
+    //hard_turn(1);
+    //forward(); // just for track 3
+
+    // track 3
+    // if (millis() > 40000 && millis() < 50000){
+    //   forward();
+    // } else {
+    //   hard_turn(1);
+    // }
+
+    // track 3 backward
+    // if (millis() > 16000 && millis() < 24000) {
+    //   forward();
+    // } else {
+    //   hard_turn(-1);
+    // }
+
+    //track 2 both ways
+    if (millis() > 47000) {
+      hard_turn(-1);
+    } else {
+      hard_turn(1);
+    }
   }
   
   delay(wait_period);
